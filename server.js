@@ -1,5 +1,5 @@
+require('dotenv').config(); // Load .env
 const { OpenAI } = require("openai");
-//require('dotenv').config();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const express = require('express');
@@ -36,66 +36,63 @@ io.on('connection', (socket) => {
   console.log(`[${new Date().toISOString()}] Client connected:`, socket.id);
 
   socket.on('getLobbies', () => {
-    console.log(`[${new Date().toISOString()}] getLobbies requested by ${socket.id}`);
     socket.emit('lobbies', Object.keys(lobbies));
   });
 
   socket.on('createLobby', (lobbyId) => {
-    console.log(`[${new Date().toISOString()}] Received createLobby:`, lobbyId);
     if (!lobbies[lobbyId]) {
       lobbies[lobbyId] = { users: [], messages: [], currentQuestionIndex: 0 };
-      console.log(`[${new Date().toISOString()}] Lobby created:`, lobbyId);
       io.emit('lobbies', Object.keys(lobbies));
-    } else {
-      console.log(`[${new Date().toISOString()}] Lobby already exists:`, lobbyId);
     }
   });
 
   socket.on('joinLobby', ({ lobbyId, username }) => {
-    console.log(`[${new Date().toISOString()}] User ${username} joining lobby:`, lobbyId);
     socket.join(lobbyId);
-
-    if (!lobbies[lobbyId]) {
-      console.warn(`[${new Date().toISOString()}] joinLobby failed: Lobby does not exist:`, lobbyId);
-      return;
-    }
+    if (!lobbies[lobbyId]) return;
 
     lobbies[lobbyId].users.push(username);
-    console.log(`[${new Date().toISOString()}] Users in ${lobbyId}:`, lobbies[lobbyId].users);
     io.to(lobbyId).emit('chat', { sender: 'System', message: `${username} joined.` });
-    io.to(lobbyId).emit('chat', { sender: 'System', message: "Include @ai in message to communicate with AI bot" });
+    io.to(lobbyId).emit('chat', { sender: 'System', message: "Type '@ai' to talk to the AI host!" });
   });
 
   socket.on("sendMessage", async ({ lobbyId, sender, message }) => {
-    console.log(`[${new Date().toISOString()}] Message from ${sender} in lobby ${lobbyId}:`, message);
     io.to(lobbyId).emit("chat", { sender, message });
 
     const lobby = lobbies[lobbyId];
     if (!lobby) return;
 
-    const currentQ = questions[lobby.currentQuestionIndex];
-    if (currentQ && message.toLowerCase() == (currentQ.a)) {
-      io.to(lobbyId).emit("chat", { 
+    // Trivia answer check
+    const currentQ = questions[lobby.currentQuestionIndex % questions.length];
+    if (currentQ && message.toLowerCase().trim() === currentQ.a.toLowerCase()) {
+      io.to(lobbyId).emit("chat", {
         sender: "Game",
-        message: `🎉 ${sender} answered correctly! The next game event will commence soon.`,        
+        message: `🎉 ${sender} answered correctly!`,
       });
       lobby.currentQuestionIndex++;
     }
 
+    // AI bot response
     if (sender !== "AI Bot" && message.toLowerCase().includes("@ai")) {
       try {
-        console.log(`[${new Date().toISOString()}] Sending to OpenAI API...`);
         const response = await openai.chat.completions.create({
           model: "gpt-3.5-turbo",
-          messages: [{ role: "user", content: message }],
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are an energetic trivia game host. Keep responses short, fun, and lively. Engage the players and occasionally ask trivia questions.",
+            },
+            { role: "user", content: message },
+          ],
         });
         const botReply = response.choices[0].message.content;
-        console.log(`[${new Date().toISOString()}] OpenAI replied:`, botReply);
-
         io.to(lobbyId).emit("chat", { sender: "AI Bot", message: botReply });
       } catch (error) {
-        console.error(`[${new Date().toISOString()}] OpenAI API error:`, error);
-        io.to(lobbyId).emit("chat", { sender: "System", message: "AI Bot failed to respond." });
+        console.error("OpenAI error:", error.message);
+        io.to(lobbyId).emit("chat", {
+          sender: "System",
+          message: "⚠️ AI Bot failed to respond.",
+        });
       }
     }
   });
@@ -105,7 +102,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// Inject game events (trivia) every 30 seconds
+// Trivia event loop every 25s
 setInterval(() => {
   Object.entries(lobbies).forEach(([lobbyId, lobby]) => {
     if (lobby.users.length === 0) return;
@@ -113,14 +110,13 @@ setInterval(() => {
     const qIndex = lobby.currentQuestionIndex % questions.length;
     const question = questions[qIndex];
 
-    console.log(`[${new Date().toISOString()}] Sending trivia to ${lobbyId}: ${question.q}`);
-
+    console.log(`[${new Date().toISOString()}] Trivia sent to ${lobbyId}: ${question.q}`);
     io.to(lobbyId).emit("chat", {
       sender: "Game",
-      message: `Trivia: ${question.q}`,
+      message: `🧠 Trivia: ${question.q}`,
     });
   });
-}, 25000); // 25 seconds
+}, 25000);
 
 server.listen(3000, () =>
   console.log(`[${new Date().toISOString()}] WebSocket server running on port 3000`)
