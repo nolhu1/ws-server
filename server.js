@@ -197,35 +197,57 @@ socket.on('joinLobby', ({ lobbyId, username }) => {
     }
 
     // Handle AI bot responses if message contains @bot_name of a spawned bot
-    const mentionedBots = Object.keys(bots).filter(botName =>
-      message.toLowerCase().includes("@" + botName.toLowerCase())
-    );
+const mentionedBots = Object.keys(bots).filter(botName =>
+  message.toLowerCase().includes("@" + botName.toLowerCase())
+);
 
-    const activeBots = spawnedBots[lobbyId] || [];
-    const botsToRespond = mentionedBots.filter(botName => activeBots.includes(botName));
+const activeBots = spawnedBots[lobbyId] || [];
+const botsToRespond = mentionedBots.filter(botName => activeBots.includes(botName));
 
-    if (botsToRespond.length > 0 && sender !== "AI Bot") {
-      const botName = botsToRespond[0];
-      const bot = bots[botName];
+if (botsToRespond.length > 0 && sender !== "AI Bot") {
+  const botName = botsToRespond[0];
+  const bot = bots[botName];
 
-      try {
-        const response = await openai.chat.completions.create({
-          model: "gpt-3.5-turbo",
-          messages: [
-            { role: "system", content: bot.systemPrompt },
-            { role: "user", content: message },
-          ],
-        });
-        const botReply = response.choices[0].message.content;
-        io.to(lobbyId).emit("chat", { sender: bot.displayName, message: botReply });
-      } catch (error) {
-        console.error(`OpenAI error for ${botName}:`, error.message);
-        io.to(lobbyId).emit("chat", {
-          sender: "System",
-          message: `⚠️ ${bot.displayName} failed to respond.`,
-        });
+  try {
+    const stream = await openai.chat.completions.create({
+      model: "gpt-4", // or "gpt-3.5-turbo"
+      messages: [
+        { role: "system", content: bot.systemPrompt },
+        { role: "user", content: message },
+      ],
+      stream: true,
+    });
+
+    let firstChunk = true;
+
+    for await (const chunk of stream) {
+      const token = chunk.choices?.[0]?.delta?.content;
+      if (!token) continue;
+
+      // Emit chunks incrementally as aiChunk
+      io.to(lobbyId).emit("aiChunk", { sender: bot.displayName, content: token });
+
+      // Optional: Emit a synthetic "chat" message only on the first chunk to initialize UI
+      if (firstChunk) {
+        firstChunk = false;
+        io.to(lobbyId).emit("chat", { sender: bot.displayName, message: "" });
       }
     }
+
+    // Signal end of stream
+    io.to(lobbyId).emit("aiEnd", { sender: bot.displayName });
+
+  } catch (error) {
+    console.error(`OpenAI stream error for ${botName}:`, error.message);
+    io.to(lobbyId).emit("chat", {
+      sender: "System",
+      message: `⚠️ ${bot.displayName} failed to respond.`,
+    });
+  }
+
+  return; // Prevent sending trivia message twice
+}
+
   });
 
   socket.on('disconnect', () => {
