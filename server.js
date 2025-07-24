@@ -223,6 +223,7 @@ if (botsToRespond.length > 0 && sender !== "AI Bot") {
     for await (const chunk of stream) {
       const token = chunk.choices?.[0]?.delta?.content;
       if (!token) continue;
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       // Emit chunks incrementally as aiChunk
       io.to(lobbyId).emit("aiChunk", { sender: bot.displayName, content: token });
