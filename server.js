@@ -1,4 +1,4 @@
-//require('dotenv').config();
+require('dotenv').config();
 const { OpenAI } = require("openai");
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -125,7 +125,7 @@ socket.on('joinLobby', ({ lobbyId, username }) => {
     // Optionally send a message just acknowledging rejoin or do nothing
     socket.emit("chat", {
       sender: "System",
-      message: `You have rejoined the lobby.`,
+      message: `You have rejoined the lobby. Current bots present: ${spawnedBots[lobbyId] ? spawnedBots[lobbyId].join(", ") : "None"}`,
     });
 
     return;
@@ -210,7 +210,7 @@ if (botsToRespond.length > 0 && sender !== "AI Bot") {
 
   try {
     const stream = await openai.chat.completions.create({
-      model: "gpt-4", // or "gpt-3.5-turbo"
+      model: "gpt-3.5-turbo",
       messages: [
         { role: "system", content: bot.systemPrompt },
         { role: "user", content: message },
