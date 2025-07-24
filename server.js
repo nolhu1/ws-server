@@ -227,11 +227,11 @@ if (botsToRespond.length > 0 && sender !== "AI Bot") {
       // Emit chunks incrementally as aiChunk
       io.to(lobbyId).emit("aiChunk", { sender: bot.displayName, content: token });
 
-      // Optional: Emit a synthetic "chat" message only on the first chunk to initialize UI
-      if (firstChunk) {
-        firstChunk = false;
-        io.to(lobbyId).emit("chat", { sender: bot.displayName, message: "" });
-      }
+      // // Optional: Emit a synthetic "chat" message only on the first chunk to initialize UI
+      // if (firstChunk) {
+      //   firstChunk = false;
+      //   io.to(lobbyId).emit("chat", { sender: bot.displayName, message: "" });
+      // }
     }
 
     // Signal end of stream
